@@ -1,0 +1,70 @@
+version: "3.8"
+
+# =============================================================================
+# NVIDIA Triage Alerting MVP - Docker Compose
+# =============================================================================
+# Run with: docker-compose up -d
+# Stop with: docker-compose down
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL - Alerts, incidents, audit trail
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: triage-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: triage_alerts
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Redis - Optional caching and ephemeral state
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: triage-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # FastAPI Application (optional - can also run locally with uvicorn)
+  # ---------------------------------------------------------------------------
+  # Uncomment to run the app in Docker:
+  # 
+  # app:
+  #   build: .
+  #   container_name: triage-app
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/triage_alerts
+  #     LLM_PROVIDER: gemini
+  #     GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: triage-network

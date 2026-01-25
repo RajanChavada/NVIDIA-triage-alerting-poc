@@ -1,0 +1,57 @@
+[project]
+name = "nvidia-triage-alerting"
+version = "0.1.0"
+description = "AI-powered triage alerting MVP for infrastructure automation"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Jimmy Chavada" }
+]
+
+dependencies = [
+    # Web Framework
+    "fastapi[all]>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    
+    # Database
+    "sqlalchemy[asyncio]>=2.0.25",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+    
+    # AI/Agents
+    "langchain>=0.1.0",
+    "langchain-google-genai>=0.0.6",
+    "langchain-openai>=0.0.5",
+    "langgraph>=0.0.26",
+    
+    # Observability
+    "langfuse>=2.0.0",
+    
+    # Configuration
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+    
+    # Utilities
+    "httpx>=0.26.0",
+    "pyyaml>=6.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.1.0",
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]

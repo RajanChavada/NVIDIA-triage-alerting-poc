@@ -1,0 +1,62 @@
+# =============================================================================
+# Service Registry for Synthetic Microservices
+# =============================================================================
+# This registry defines fake services and their metrics for the demo.
+# "This registry could point at real NVIDIA services in production."
+
+services:
+  - name: auth-service
+    description: Authentication and authorization service
+    region: us-central1
+    criticality: high
+    metrics:
+      - name: latency_p95_ms
+        baseline: 120
+        unit: ms
+      - name: error_rate
+        baseline: 0.01
+        unit: ratio
+      - name: cpu_percent
+        baseline: 35
+        unit: percent
+
+  - name: payment-service
+    description: Payment processing service
+    region: us-central1
+    criticality: critical
+    metrics:
+      - name: latency_p95_ms
+        baseline: 200
+        unit: ms
+      - name: error_rate
+        baseline: 0.005
+        unit: ratio
+      - name: memory_percent
+        baseline: 60
+        unit: percent
+
+  - name: user-service
+    description: User profile and data service
+    region: us-central1
+    criticality: medium
+    metrics:
+      - name: latency_p95_ms
+        baseline: 80
+        unit: ms
+      - name: error_rate
+        baseline: 0.02
+        unit: ratio
+
+# Alert types that can be generated
+alert_types:
+  - latency_spike
+  - error_rate_spike
+  - cpu_anomaly
+  - memory_anomaly
+
+# Detection methods
+detectors:
+  - threshold
+  - zscore
+  - spectral
+  - rolling_mean
