@@ -59,8 +59,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+import os
+
 # API Configuration
-API_BASE_URL = "http://localhost:8000"
+# Use environment variable for backend URL if provided, otherwise default to localhost
+API_BASE_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
 
 def create_workflow_graph():
     """Create a visual representation of the LangGraph workflow."""
