@@ -157,17 +157,14 @@ with st.sidebar.expander("🚀 Demo Scenarios", expanded=True):
     if col1.button("🔐 Auth"):
         asyncio.run(trigger_synthetic_alert("auth-service", scenario if scenario != "Random" else None))
         st.toast("Auth Alert Triggered!")
-        time.sleep(1)
         st.rerun()
     if col2.button("💳 Payment"):
         asyncio.run(trigger_synthetic_alert("payment-service", scenario if scenario != "Random" else None))
         st.toast("Payment Alert Triggered!")
-        time.sleep(1)
         st.rerun()
     if st.button("👥 User Service", use_container_width=True):
         asyncio.run(trigger_synthetic_alert("user-service", scenario if scenario != "Random" else None))
         st.toast("User Alert Triggered!")
-        time.sleep(1)
         st.rerun()
 
 if st.sidebar.button("🔄 Refresh Alerts", use_container_width=True):
@@ -179,13 +176,21 @@ if not results:
     st.sidebar.info("No active alerts being triaged.")
     selected_triage = None
 else:
-    # Sort for display
-    results = sorted(results, key=lambda x: str(x.get('triage_id', '')), reverse=True)
+    # Sort by created_at descending
+    results = sorted(results, key=lambda x: x.get('created_at', ''), reverse=True)
+    
+    # Check if any are still processing to enable auto-refresh
+    any_processing = any(res.get('status') == 'processing' for res in results)
+    if any_processing:
+        st.sidebar.caption("🔄 Agent is active... auto-refreshing")
+        time.sleep(2) # Brief wait before next rerun if active
+        st.rerun()
     
     for res in results:
         t_id = res['triage_id']
         service = res['service']
         severity = res['severity']
+        status = res['status']
         
         # Display clickable alert item
         with st.sidebar.container():
@@ -193,7 +198,13 @@ else:
             with col1:
                 # Highlight if selected
                 is_selected = "selected_triage_id" in st.session_state and st.session_state.selected_triage_id == t_id
-                btn_label = f"**{service}**" if is_selected else f"{service}"
+                
+                # Add status icon
+                status_prefix = "🔄 " if status == "processing" else ""
+                btn_label = f"{status_prefix}{service}"
+                if is_selected:
+                    btn_label = f"**{btn_label}**"
+                
                 if st.button(f"{btn_label} | {severity.upper()}", key=f"btn_{t_id}"):
                     st.session_state.selected_triage_id = t_id
             with col2:

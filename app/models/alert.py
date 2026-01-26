@@ -106,6 +106,6 @@ class TriageResult(BaseModel):
     events: list[dict] = Field(default_factory=list)
     
     # Metadata
-    status: Literal["pending", "approved", "rejected", "executed"] = "pending"
+    status: Literal["pending", "processing", "approved", "rejected", "executed"] = "pending"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: datetime | None = None

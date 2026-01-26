@@ -57,6 +57,17 @@ async def enqueue_alert(triage_id: UUID, alert: AlertPayload) -> None:
     """
     Enqueue an alert for triage processing.
     """
+    # Initialize result placeholder for UI feedback
+    triage_results[triage_id] = TriageResult(
+        triage_id=triage_id,
+        alert_id=alert.id,
+        service=alert.service,
+        severity=alert.severity,
+        status="processing",
+        created_at=datetime.utcnow(),
+    )
+    save_cache()
+    
     await triage_queue.put((triage_id, alert))
     print(f"📥 Alert {alert.id} queued for triage (triage_id: {triage_id})")
 
@@ -74,6 +85,11 @@ async def triage_worker() -> None:
         try:
             triage_id, alert = await triage_queue.get()
             
+            # Ensure status is processing (in case of reloads)
+            if triage_id in triage_results:
+                triage_results[triage_id].status = "processing"
+                save_cache()
+            
             start_triage_metrics(
                 triage_id=str(triage_id),
                 alert_id=str(alert.id),
@@ -83,7 +99,7 @@ async def triage_worker() -> None:
             try:
                 result = await run_triage_workflow(triage_id, alert)
                 triage_results[triage_id] = result
-                save_cache() # Persist
+                save_cache() # Persist final result
                 end_triage_metrics(str(triage_id))
                 
             except Exception as e:
@@ -102,7 +118,7 @@ async def triage_worker() -> None:
                         "ts": datetime.utcnow().isoformat(),
                     }],
                 )
-                save_cache() # Persist
+                save_cache() # Persist error state
             
             triage_queue.task_done()
             
@@ -139,5 +155,5 @@ def get_triage_result(triage_id: UUID) -> TriageResult | None:
 def get_all_triage_results() -> list[TriageResult]:
     """Get all triage results (for Streamlit dashboard)."""
     results = list(triage_results.values())
-    # Sort by triage_id (roughly chronological for UUIDv4)
-    return sorted(results, key=lambda x: str(x.triage_id), reverse=True)
+    # Sort by created_at descending
+    return sorted(results, key=lambda x: x.created_at, reverse=True)
