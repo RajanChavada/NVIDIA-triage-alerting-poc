@@ -75,6 +75,7 @@ def create_workflow_graph():
         ('gather_context', '#1f6feb'),
         ('analyze_logs', '#8957e5'),
         ('analyze_metrics', '#8957e5'),
+        ('tools', '#0969da'),
         ('incident_rag', '#0969da'),
         ('plan_remediation', '#bf4b00'),
         ('validate_action', '#a371f7'),
@@ -88,7 +89,11 @@ def create_workflow_graph():
     edges = [
         ('START', 'gather_context'),
         ('gather_context', 'analyze_logs'),
+        ('analyze_logs', 'tools'),
+        ('tools', 'analyze_logs'),
         ('analyze_logs', 'analyze_metrics'),
+        ('analyze_metrics', 'tools'),
+        ('tools', 'analyze_metrics'),
         ('analyze_metrics', 'incident_rag'),
         ('incident_rag', 'plan_remediation'),
         ('plan_remediation', 'validate_action'),
@@ -252,12 +257,21 @@ if selected_res:
                 elif "plan" in node_name:
                     icon = "💡"
                     color = "#bf4b00"
+                elif node_name == "tools":
+                    icon = "🛠️"
+                    color = "#0969da"
                 else:
                     icon = "⚙️"
                     color = "#1f6feb"
                 
                 with st.expander(f"{icon} **{node_name.upper()}** - Step {i+1}/{len(events)}", expanded=(i == len(events) - 1)):
                     st.markdown(f"**Summary:** {summary}")
+                    
+                    # Show tool calls if present
+                    if 'tool_calls' in event and event['tool_calls']:
+                        st.markdown("**🛠️ Tool Calls Requested:**")
+                        for tc in event['tool_calls']:
+                            st.code(f"{tc['name']}({tc.get('args', {})})")
                     
                     # Show LLM reasoning if available
                     if 'llm_reasoning' in event and event['llm_reasoning']:
@@ -266,17 +280,13 @@ if selected_res:
                         st.markdown(event['llm_reasoning'])
                         st.markdown("---")
                     
-                    # Show additional metadata if available
-                    if 'logs_analyzed' in event:
-                        st.write(f"📋 Logs Analyzed: {event['logs_analyzed']}")
-                    if 'patterns_found' in event:
-                        st.write(f"🔎 Patterns: {', '.join(event['patterns_found'])}")
-                    if 'anomalies' in event:
-                        st.write(f"⚠️ Anomalies: {', '.join(event['anomalies'])}")
-                    if 'incidents_found' in event:
-                        st.write(f"📚 Similar Incidents: {event['incidents_found']}")
-                    if 'confidence' in event:
-                        st.progress(event['confidence'], f"Confidence: {event['confidence']:.0%}")
+                    # Show additional metadata
+                    meta_cols = st.columns(2)
+                    with meta_cols[0]:
+                        if 'service' in event: st.write(f"🏢 Service: {event['service']}")
+                        if 'status' in event: st.write(f"📌 Status: {event['status']}")
+                    with meta_cols[1]:
+                        if 'confidence' in event: st.write(f"🎯 Confidence: {event['confidence']:.0%}")
                     
                     st.caption(f"🕒 {event.get('ts', 'N/A')}")
     

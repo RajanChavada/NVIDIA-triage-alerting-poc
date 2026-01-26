@@ -49,6 +49,7 @@ class AlertTriageState(TypedDict):
     recommended_action: str
     confidence: float
     requires_approval: bool
+    completed_at: str | None = None
     
     # Trace for UI - events accumulate using add operator
     events: Annotated[list[dict], add]

@@ -39,4 +39,5 @@ async def finalize(state: AlertTriageState) -> dict:
     
     return {
         "events": [event],
+        "completed_at": datetime.utcnow().isoformat(),
     }

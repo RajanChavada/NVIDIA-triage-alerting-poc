@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     openrouter_api_key: str | None = None
     
     # Model selection
-    gemini_model: str = "gemini-2.5-flash"
-    openrouter_model: str = "openai/gpt-5.2"
+    gemini_model: str = "gemini-2.0-flash"
+    openrouter_model: str = "anthropic/claude-3.5-sonnet"
     
     # -------------------------------------------------------------------------
     # Database Configuration

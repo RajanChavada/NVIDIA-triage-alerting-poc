@@ -5,7 +5,7 @@ description = "AI-powered triage alerting MVP for infrastructure automation"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-    { name = "Jimmy Chavada" }
+    { name = "Rajan Chavada" }
 ]
 
 dependencies = [

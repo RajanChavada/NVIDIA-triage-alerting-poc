@@ -68,29 +68,23 @@ async def list_triage_results() -> list[TriageResult]:
 @router.post("/triage/{triage_id}/approve")
 async def approve_action(triage_id: UUID) -> dict:
     """
-    Approve a recommended action.
-    
-    TODO: Execute the approved action and log to audit trail.
+    Approve a recommended action and resume the triage workflow.
     """
-    result = get_triage_result(triage_id)
+    from app.services.triage import approve_triage
+    
+    result = await approve_triage(triage_id)
     
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Triage {triage_id} not found",
+            detail=f"Triage {triage_id} not found or approval failed",
         )
-    
-    # Update status
-    result.status = "approved"
-    
-    # TODO: Execute action and log to audit trail
-    # TODO: Send feedback to Langfuse for evaluation
     
     return {
         "triage_id": str(triage_id),
-        "status": "approved",
+        "status": result.status,
         "action": result.recommended_action,
-        "message": f"Simulated executing: {result.recommended_action}",
+        "message": f"Action approved and executed for {result.service}",
     }
 
 
