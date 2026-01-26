@@ -26,6 +26,7 @@ class NodeMetrics:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    tool_calls: int = 0
     cost_usd: float = 0.0
     success: bool = True
     error: str | None = None
@@ -72,6 +73,7 @@ class TriageMetrics:
                     "duration_ms": m.duration_ms,
                     "llm_model": m.llm_model,
                     "total_tokens": m.total_tokens,
+                    "tool_calls": m.tool_calls,
                     "cost_usd": m.cost_usd,
                 }
                 for m in self.node_metrics

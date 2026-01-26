@@ -113,3 +113,28 @@ async def reject_action(triage_id: UUID, reason: str = "User rejected") -> dict:
         "status": "rejected",
         "reason": reason,
     }
+
+@router.post("/generate", response_model=TriageResponse, status_code=status.HTTP_201_CREATED)
+async def generate_and_triage(
+    service_name: str | None = None,
+    alert_type: str | None = None
+) -> TriageResponse:
+    """
+    Generate a synthetic alert and automatically queue it for triage.
+    
+    This is used for demo purposes to avoid external alert triggers.
+    """
+    from app.services.alert_gen import generate_synthetic_alert
+    
+    # 1. Generate alert
+    alert = generate_synthetic_alert(service_name, alert_type)
+    
+    # 2. Queue for triage
+    triage_id = uuid4()
+    await enqueue_alert(triage_id, alert)
+    
+    return TriageResponse(
+        triage_id=triage_id,
+        status="queued",
+        message=f"Synthetic {alert.alert_type} alert for {alert.service} generated and queued.",
+    )

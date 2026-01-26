@@ -132,9 +132,39 @@ async def reject_action(triage_id):
         except Exception as e:
             return {"error": str(e)}
 
+async def trigger_synthetic_alert(service_name=None, alert_type=None):
+    async with httpx.AsyncClient() as client:
+        try:
+            params = {}
+            if service_name: params["service_name"] = service_name
+            if alert_type: params["alert_type"] = alert_type
+            response = await client.post(f"{API_BASE_URL}/alerts/generate", params=params)
+            return response.json()
+        except Exception as e:
+            return {"error": str(e)}
+
 # Sidebar - Real-time Feed
 st.sidebar.title("🚨 Recent Alerts")
-if st.sidebar.button("🔄 Refresh Data"):
+
+# Demo Controls
+with st.sidebar.expander("🚀 Demo Scenarios", expanded=True):
+    scenario = st.selectbox("Select Failure Mode", [
+        "Random", "latency_spike", "error_rate_spike", "cpu_anomaly", "memory_anomaly"
+    ])
+    
+    st.write("Trigger Service:")
+    col1, col2 = st.columns(2)
+    if col1.button("🔐 Auth"):
+        asyncio.run(trigger_synthetic_alert("auth-service", scenario if scenario != "Random" else None))
+        st.toast("Auth Alert Triggered!")
+    if col2.button("💳 Payment"):
+        asyncio.run(trigger_synthetic_alert("payment-service", scenario if scenario != "Random" else None))
+        st.toast("Payment Alert Triggered!")
+    if st.button("👥 User Service", use_container_width=True):
+        asyncio.run(trigger_synthetic_alert("user-service", scenario if scenario != "Random" else None))
+        st.toast("User Alert Triggered!")
+
+if st.sidebar.button("🔄 Refresh Alerts", use_container_width=True):
     st.rerun()
 
 results = asyncio.run(get_triage_results())
@@ -143,20 +173,22 @@ if not results:
     st.sidebar.info("No active alerts being triaged.")
     selected_triage = None
 else:
-    # Sort by creation time descending
-    results = sorted(results, key=lambda x: x.get('created_at', ''), reverse=True)
+    # Sort for display
+    results = sorted(results, key=lambda x: str(x.get('triage_id', '')), reverse=True)
     
     for res in results:
         t_id = res['triage_id']
         service = res['service']
         severity = res['severity']
-        status = res['status']
         
         # Display clickable alert item
         with st.sidebar.container():
             col1, col2 = st.columns([3, 1])
             with col1:
-                if st.button(f"{service} | {severity.upper()}", key=f"btn_{t_id}"):
+                # Highlight if selected
+                is_selected = "selected_triage_id" in st.session_state and st.session_state.selected_triage_id == t_id
+                btn_label = f"**{service}**" if is_selected else f"{service}"
+                if st.button(f"{btn_label} | {severity.upper()}", key=f"btn_{t_id}"):
                     st.session_state.selected_triage_id = t_id
             with col2:
                 st.markdown(f"<span class='severity-{severity.lower()}'>•</span>", unsafe_allow_html=True)
@@ -192,13 +224,18 @@ if selected_res:
             
             # Key Findings
             st.subheader("🔍 Key Findings")
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
+            
+            tool_call_count = sum(len(event.get('tool_calls', [])) for event in selected_res.get('events', []))
+            
             with col1:
                 st.metric("Anomalies Detected", len(selected_res.get('anomalies', [])))
             with col2:
                 st.metric("Similar Incidents", len(selected_res.get('similar_incidents', [])))
             with col3:
-                st.metric("Processing Time", f"{len(selected_res.get('events', []))} steps")
+                st.metric("Data Queries", tool_call_count)
+            with col4:
+                st.metric("Processing Steps", len(selected_res.get('events', [])))
 
         with col_side:
             # Remediation Panel

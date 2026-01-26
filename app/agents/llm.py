@@ -73,6 +73,7 @@ class MetricsTracker:
         self.start_time = None
         self.prompt_tokens = 0
         self.completion_tokens = 0
+        self.tool_calls = 0
         print(f"📊 [METRICS] Tracker initialized: node={node_name}, triage={triage_id}")
         
     def __enter__(self):
@@ -90,6 +91,7 @@ class MetricsTracker:
         print(f"📊 [METRICS] Exiting {self.node_name}:")
         print(f"   - Duration: {duration_ms:.1f}ms")
         print(f"   - Tokens: {total_tokens} ({self.prompt_tokens} prompt + {self.completion_tokens} completion)")
+        print(f"   - Tool Calls: {self.tool_calls}")
         print(f"   - Cost: ${cost:.6f}")
         print(f"   - Success: {exc_type is None}")
         
@@ -102,6 +104,7 @@ class MetricsTracker:
             prompt_tokens=self.prompt_tokens,
             completion_tokens=self.completion_tokens,
             total_tokens=total_tokens,
+            tool_calls=self.tool_calls,
             cost_usd=cost,
             success=exc_type is None,
             error=str(exc_val) if exc_val else None,
@@ -120,3 +123,8 @@ class MetricsTracker:
         self.prompt_tokens = len(prompt) // 4
         self.completion_tokens = len(response) // 4
         print(f"📊 [METRICS] Tokens tracked for {self.node_name}: {self.prompt_tokens} + {self.completion_tokens} = {self.prompt_tokens + self.completion_tokens}")
+
+    def track_tool_call(self):
+        """Track a tool call execution."""
+        self.tool_calls += 1
+        print(f"📊 [METRICS] Tool call tracked for {self.node_name} (Total: {self.tool_calls})")

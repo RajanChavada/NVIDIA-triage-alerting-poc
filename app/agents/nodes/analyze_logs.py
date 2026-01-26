@@ -33,6 +33,11 @@ Look for stack traces, segmentation faults, or connection errors.""")
             response = llm.invoke(messages)
             tracker.track_tokens(str(messages), response.content)
             
+            # Record tool calls for observability
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                for _ in response.tool_calls:
+                    tracker.track_tool_call()
+            
             # If the LLM didn't call a tool, we can summarize
             if not response.tool_calls:
                 summary = response.content[:2000] if response.content else "Log analysis completed. See trace for details."
