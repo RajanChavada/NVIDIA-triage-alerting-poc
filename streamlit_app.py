@@ -62,8 +62,8 @@ st.markdown("""
 import os
 
 # API Configuration
-# Use environment variable for backend URL if provided, otherwise default to localhost
-API_BASE_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
+# Use environment variable for backend URL if provided, otherwise default to 127.0.0.1
+API_BASE_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 
 def create_workflow_graph():
     """Create a visual representation of the LangGraph workflow."""
@@ -355,7 +355,7 @@ if selected_res:
 else:
     st.info("👈 Select an alert from the sidebar to view triage details.")
     # Show a premium landing state
-    st.image("https://www.nvidia.com/content/dam/en-zz/Solutions/deep-learning/deep-learning-education/nvidia-training-logo-625x352.png", width=200)
+    st.image("https://www.nvidia.com/content/dam/en-zz/Solutions/about-nvidia/logo-and-brand/01-nvidia-logo-vert-500x200-2c50-p@2x.png", width=150)
     st.header("Welcome to AI Triage Console")
     st.write("This Agentic AI workflow is currently monitoring 3 microservices.")
 
