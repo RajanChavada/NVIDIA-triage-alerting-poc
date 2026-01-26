@@ -17,7 +17,7 @@ API_BASE_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 
 # Fetch metrics
 try:
-    response = httpx.get(f"{API_BASE_URL}/observability/metrics", timeout=5.0)
+    response = httpx.get(f"{API_BASE_URL}/observability/metrics", timeout=60.0)
     all_metrics = response.json() if response.status_code == 200 else []
 except Exception as e:
     st.error(f"⚠️ Could not fetch metrics: {e}")

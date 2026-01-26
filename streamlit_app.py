@@ -138,7 +138,7 @@ async def trigger_synthetic_alert(service_name=None, alert_type=None):
             params = {}
             if service_name: params["service_name"] = service_name
             if alert_type: params["alert_type"] = alert_type
-            response = await client.post(f"{API_BASE_URL}/alerts/generate", params=params, timeout=10.0)
+            response = await client.post(f"{API_BASE_URL}/alerts/generate", params=params, timeout=60.0)
             if response.status_code >= 400:
                 return {"error": f"HTTP {response.status_code}: {response.text}"}
             return response.json()
