@@ -138,13 +138,32 @@ async def trigger_synthetic_alert(service_name=None, alert_type=None):
             params = {}
             if service_name: params["service_name"] = service_name
             if alert_type: params["alert_type"] = alert_type
-            response = await client.post(f"{API_BASE_URL}/alerts/generate", params=params)
+            response = await client.post(f"{API_BASE_URL}/alerts/generate", params=params, timeout=10.0)
+            if response.status_code >= 400:
+                return {"error": f"HTTP {response.status_code}: {response.text}"}
             return response.json()
         except Exception as e:
             return {"error": str(e)}
 
+async def check_backend_health():
+    try:
+        async with httpx.AsyncClient() as client:
+            # Try to hit the triage list endpoint as a health check
+            resp = await client.get(f"{API_BASE_URL}/alerts/triage", timeout=2.0)
+            return resp.status_code == 200
+    except:
+        return False
+
 # Sidebar - Real-time Feed
 st.sidebar.title("🚨 Recent Alerts")
+
+# Health Check
+is_healthy = asyncio.run(check_backend_health())
+if is_healthy:
+    st.sidebar.success(f"📟 Backend Connected: {API_BASE_URL}")
+else:
+    st.sidebar.error(f"📡 Backend Offline: {API_BASE_URL}")
+    st.sidebar.warning("Hosted Streamlit cannot reach your local machine. Please run Streamlit locally or use a tunnel.")
 
 # Demo Controls
 with st.sidebar.expander("🚀 Demo Scenarios", expanded=True):
@@ -154,18 +173,30 @@ with st.sidebar.expander("🚀 Demo Scenarios", expanded=True):
     
     st.write("Trigger Service:")
     col1, col2 = st.columns(2)
+    
     if col1.button("🔐 Auth"):
-        asyncio.run(trigger_synthetic_alert("auth-service", scenario if scenario != "Random" else None))
-        st.toast("Auth Alert Triggered!")
-        st.rerun()
+        res = asyncio.run(trigger_synthetic_alert("auth-service", scenario if scenario != "Random" else None))
+        if "error" in res:
+            st.error(f"Trigger failed: {res['error']}")
+        else:
+            st.toast("Auth Alert Triggered!")
+            st.rerun()
+            
     if col2.button("💳 Payment"):
-        asyncio.run(trigger_synthetic_alert("payment-service", scenario if scenario != "Random" else None))
-        st.toast("Payment Alert Triggered!")
-        st.rerun()
+        res = asyncio.run(trigger_synthetic_alert("payment-service", scenario if scenario != "Random" else None))
+        if "error" in res:
+            st.error(f"Trigger failed: {res['error']}")
+        else:
+            st.toast("Payment Alert Triggered!")
+            st.rerun()
+            
     if st.button("👥 User Service", use_container_width=True):
-        asyncio.run(trigger_synthetic_alert("user-service", scenario if scenario != "Random" else None))
-        st.toast("User Alert Triggered!")
-        st.rerun()
+        res = asyncio.run(trigger_synthetic_alert("user-service", scenario if scenario != "Random" else None))
+        if "error" in res:
+            st.error(f"Trigger failed: {res['error']}")
+        else:
+            st.toast("User Alert Triggered!")
+            st.rerun()
 
 if st.sidebar.button("🔄 Refresh Alerts", use_container_width=True):
     st.rerun()
