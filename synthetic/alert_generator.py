@@ -109,7 +109,7 @@ async def send_alert(alert: dict, base_url: str = "http://localhost:8000") -> di
 async def get_triage_result(triage_id: str, base_url: str = "http://localhost:8000") -> dict:
     """Poll for triage result."""
     async with httpx.AsyncClient() as client:
-        for _ in range(10):  # Poll up to 10 times
+        for i in range(60):  # Poll up to 60 times (60 seconds)
             await asyncio.sleep(1)
             try:
                 response = await client.get(
@@ -118,8 +118,11 @@ async def get_triage_result(triage_id: str, base_url: str = "http://localhost:80
                 )
                 if response.status_code == 200:
                     return response.json()
-            except Exception:
-                pass
+                elif i % 5 == 0:  # Log every 5 seconds
+                    print(f"   ⏳ Still waiting... (attempt {i+1}/60, status: {response.status_code})")
+            except Exception as e:
+                if i % 5 == 0:
+                    print(f"   ⏳ Still waiting... (attempt {i+1}/60, error: {type(e).__name__})")
         return None
 
 

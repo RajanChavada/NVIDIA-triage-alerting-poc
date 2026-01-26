@@ -1,46 +1,56 @@
 """
 Log Analysis Node - Analyzes logs for error patterns with metrics tracking.
 """
+from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.state import AlertTriageState, create_event
 from app.agents.llm import get_llm, MetricsTracker
+from app.agents.tools.elasticsearch import search_logs
 
 
 async def analyze_logs(state: AlertTriageState) -> dict:
-    """Analyze logs for error patterns and anomalies."""
-    from app.config import settings
-    
+    """
+    Agentic Log Analysis Node.
+    Uses search_logs tool to fetch data if needed, otherwise summarizes.
+    """
     alert = state["alert"]
     service = alert.get("service", "unknown")
-    context = alert.get("context", {})
-    log_ids = context.get("recent_log_ids", [])
-    alert_type = alert.get("alert_type", "unknown")
-    severity = alert.get("severity", "unknown")
     triage_id = str(state.get("triage_id", "unknown"))
     
-    # Track metrics
     with MetricsTracker(triage_id, "analyze_logs") as tracker:
         try:
-            llm = get_llm(trace_name=f"analyze_logs_{service}")
+            llm = get_llm().bind_tools([search_logs])
             
-            prompt = f"""You are a DevOps engineer analyzing logs for a {severity} severity {alert_type} alert in the {service} service.
+            # Prepare context
+            system_prompt = SystemMessage(content=f"""You are an NVIDIA Cluster SRE Agent.
+Your job is to analyze logs for the service '{service}'.
+If you don't have enough information from the initial alert, use the 'search_logs' tool.
+Look for stack traces, segmentation faults, or connection errors.""")
+            
+            # Always append a clear instruction to the history
+            prompt = f"Analyze logs for {service}. Alert details: {alert}" if not state.get("messages") else f"Based on the investigation so far, analyze the logs for {service} to find the root cause."
+            messages = [system_prompt] + state.get("messages", []) + [HumanMessage(content=prompt)]
 
-Recent log IDs: {', '.join(log_ids)}
-
-Analyze these logs and provide:
-1. **Error Patterns**: What repeated errors do you see?
-2. **Root Cause Hypothesis**: What might be causing this?
-3. **Deployment Correlation**: Any recent changes that could explain this?"""
-
-            response = llm.invoke(prompt)
-            llm_reasoning = response.content if hasattr(response, 'content') else str(response)
-            tracker.track_tokens(prompt, llm_reasoning)
-            logs_summary = llm_reasoning[:200] + "..." if len(llm_reasoning) > 200 else llm_reasoning
+            response = llm.invoke(messages)
+            tracker.track_tokens(str(messages), response.content)
+            
+            # If the LLM didn't call a tool, we can summarize
+            if not response.tool_calls:
+                summary = response.content[:2000] if response.content else "Log analysis completed. See trace for details."
+                return {
+                    "logs_summary": summary,
+                    "messages": [response],
+                    "events": [create_event("analyze_logs", "Completed log analysis", llm_reasoning=response.content)],
+                }
+            else:
+                # LLM wants to call a tool. Graph logic will handle the ToolNode.
+                return {
+                    "messages": [response],
+                    "events": [create_event("analyze_logs", f"Searching logs via tool: {response.tool_calls[0]['name']}", tool_calls=response.tool_calls)],
+                }
             
         except Exception as e:
-            llm_reasoning = f"LLM unavailable: {e}"
-            logs_summary = f"Analyzed {len(log_ids)} logs for {service}"
-    
-    return {
-        "logs_summary": logs_summary,
-        "events": [create_event("analyze_logs", logs_summary, llm_reasoning=llm_reasoning)],
-    }
+            error_msg = f"Log analysis failed: {str(e)}"
+            return {
+                "logs_summary": "Error analyzing logs",
+                "events": [create_event("analyze_logs", "Failed to analyze logs", error=error_msg)],
+            }

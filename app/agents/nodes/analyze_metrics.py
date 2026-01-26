@@ -1,42 +1,56 @@
 """
 Metrics Analysis Node - Analyzes alert metrics with observability.
 """
+from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.state import AlertTriageState, create_event
 from app.agents.llm import get_llm, MetricsTracker
+from app.agents.tools.prometheus import get_service_metrics
 
 
 async def analyze_metrics(state: AlertTriageState) -> dict:
-    """Analyze metrics and identify anomalies."""
+    """
+    Agentic Metrics Node.
+    Uses get_service_metrics tool to fetch data if needed, otherwise summarizes.
+    """
     alert = state["alert"]
     service = alert.get("service", "unknown")
-    metrics = alert.get("metrics", {})
-    alert_type = alert.get("alert_type", "unknown")
     triage_id = str(state.get("triage_id", "unknown"))
     
     with MetricsTracker(triage_id, "analyze_metrics") as tracker:
         try:
-            llm = get_llm()
+            llm = get_llm().bind_tools([get_service_metrics])
             
-            prompt = f"""Analyze these metrics for {service}:
-{metrics}
+            # Prepare context
+            system_prompt = SystemMessage(content=f"""You are an NVIDIA Cluster Observability Agent.
+Your job is to analyze metrics for the service '{service}'.
+If you don't have enough data, use the 'get_service_metrics' tool.
+Look for CPU spikes, memory leaks, or latency anomalies.""")
+            
+            # Always append a clear instruction to the history
+            prompt = f"Analyze metrics for {service}. Alert details: {alert}" if not state.get("messages") else f"Now, analyze the metrics for {service} to identify any anomalies."
+            messages = [system_prompt] + state.get("messages", []) + [HumanMessage(content=prompt)]
 
-Alert Type: {alert_type}
-
-Provide:
-1. Interpretation: What do these metrics tell us?
-2. Severity Assessment: How urgent is this?  
-3. Expected Behavior: What's normal for this service?"""
-
-            response = llm.invoke(prompt)
-            llm_reasoning = response.content if hasattr(response, 'content') else str(response)
-            tracker.track_tokens(prompt, llm_reasoning)
-            summary = llm_reasoning[:200] + "..." if len(llm_reasoning) > 200 else llm_reasoning
+            response = llm.invoke(messages)
+            tracker.track_tokens(str(messages), response.content)
+            
+            # If the LLM didn't call a tool, we can summarize
+            if not response.tool_calls:
+                summary = response.content[:2000] if response.content else "Metrics analysis completed. See trace for details."
+                return {
+                    "metrics_summary": summary,
+                    "messages": [response],
+                    "events": [create_event("analyze_metrics", "Completed metrics analysis", llm_reasoning=response.content)],
+                }
+            else:
+                # LLM wants to call a tool. Graph logic will handle the ToolNode.
+                return {
+                    "messages": [response],
+                    "events": [create_event("analyze_metrics", f"Requesting metrics via tool: {response.tool_calls[0]['name']}", tool_calls=response.tool_calls)],
+                }
             
         except Exception as e:
-            llm_reasoning = f"LLM unavailable: {e}"
-            summary = f"Metrics analysis for {service}"
-    
-    return {
-        "metrics_summary": summary,
-        "events": [create_event("analyze_metrics", summary, llm_reasoning=llm_reasoning)],
-    }
+            error_msg = f"Metrics analysis failed: {str(e)}"
+            return {
+                "metrics_summary": "Error fetching metrics",
+                "events": [create_event("analyze_metrics", "Failed to analyze metrics", error=error_msg)],
+            }

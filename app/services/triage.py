@@ -96,6 +96,30 @@ async def triage_worker() -> None:
             print(f"❌ Worker error: {e}")
 
 
+async def approve_triage(triage_id: UUID) -> TriageResult | None:
+    """
+    Approve a pending triage and resume the workflow.
+    """
+    from app.agents.graph import approve_triage_workflow
+    
+    if triage_id not in triage_results:
+        return None
+        
+    print(f"👍 Approving triage session {triage_id}...")
+    
+    try:
+        # Resume the LangGraph workflow
+        result = await approve_triage_workflow(triage_id)
+        
+        # Store the updated result
+        triage_results[triage_id] = result
+        return result
+        
+    except Exception as e:
+        print(f"❌ Approval failed for {triage_id}: {e}")
+        return None
+
+
 def get_triage_result(triage_id: UUID) -> TriageResult | None:
     """Get triage result by ID."""
     return triage_results.get(triage_id)
@@ -103,4 +127,6 @@ def get_triage_result(triage_id: UUID) -> TriageResult | None:
 
 def get_all_triage_results() -> list[TriageResult]:
     """Get all triage results (for Streamlit dashboard)."""
-    return list(triage_results.values())
+    # Sort by completed_at or just chronological
+    results = list(triage_results.values())
+    return sorted(results, key=lambda x: x.triage_id.time if hasattr(x.triage_id, 'time') else 0, reverse=True)

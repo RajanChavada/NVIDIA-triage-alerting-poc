@@ -126,8 +126,8 @@ def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> flo
     - gpt-5.2: $5.00 / 1M input, $15.00 / 1M output
     """
     pricing = {
-        "gemini-2.5-flash": {"input": 0.075 / 1_000_000, "output": 0.30 / 1_000_000},
-        "openai/gpt-5.2": {"input": 5.00 / 1_000_000, "output": 15.00 / 1_000_000},
+        "gemini-2.0-flash": {"input": 0.075 / 1_000_000, "output": 0.30 / 1_000_000},
+        "anthropic/claude-3.5-sonnet": {"input": 3.00 / 1_000_000, "output": 15.00 / 1_000_000},
     }
     
     if model in pricing:

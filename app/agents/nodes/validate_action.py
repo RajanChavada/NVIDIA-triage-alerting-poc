@@ -1,12 +1,10 @@
-"""
-Action Validation Node - Validates proposed actions with observability.
-"""
+from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.state import AlertTriageState, create_event
 from app.agents.llm import get_llm, MetricsTracker
 
 
 async def validate_action(state: AlertTriageState) -> dict:
-    """Validate the proposed remediation action."""
+    """Validate the proposed remediation action using context."""
     action = state.get("recommended_action", "No action")
     service = state.get("alert", {}).get("service", "unknown")
     severity = state.get("alert", {}).get("severity", "unknown")
@@ -16,24 +14,33 @@ async def validate_action(state: AlertTriageState) -> dict:
         try:
             llm = get_llm()
             
-            prompt = f"""Validate this action for {service} ({severity}):
-Action: {action}
-
-Is this:
-- Safe? (yes/no + reason)
-- Requires approval? (yes/no)"""
-
-            response = llm.invoke(prompt)
-            llm_reasoning = response.content if hasattr(response, 'content') else str(response)
-            tracker.track_tokens(prompt, llm_reasoning)
+            system_prompt = SystemMessage(content=f"""You are an NVIDIA Cluster Security & Reliability Guardrail.
+Assess the risk of the proposed action for {service}.
+Consider if it's a destructive action (like deleting pods) or a safe one (like scaling).""")
             
-            requires_approval = "yes" in llm_reasoning.lower() and "requires approval" in llm_reasoning.lower()
+            prompt = f"""Assess this plan:
+Action: {action}
+Severity: {severity}
+
+Provide:
+1. **Safety Assessment**: Is this action safe to execute?
+2. **Approval Gateway**: Does this require human approval? (Answer 'YES' for high risk or uncertain actions, 'NO' otherwise)"""
+            
+            messages = [system_prompt] + state.get("messages", []) + [HumanMessage(content=prompt)]
+            response = llm.invoke(messages)
+            tracker.track_tokens(str(messages), response.content)
+            
+            llm_reasoning = response.content
+            # Determine approval requirement
+            requires_approval = "YES" in llm_reasoning.upper() or severity in ["critical", "high"]
             
         except Exception as e:
-            llm_reasoning = f"LLM unavailable: {e}"
-            requires_approval = severity in ["critical", "medium", "high"]
+            llm_reasoning = f"Validation failed: {e}"
+            requires_approval = True # Fail-safe: require approval
+            response = HumanMessage(content=llm_reasoning)
     
     return {
         "requires_approval": requires_approval,
+        "messages": [response],
         "events": [create_event("validate_action", f"Validation complete. Requires approval: {requires_approval}", llm_reasoning=llm_reasoning)],
     }
