@@ -138,12 +138,15 @@ async def trigger_synthetic_alert(service_name=None, alert_type=None):
             params = {}
             if service_name: params["service_name"] = service_name
             if alert_type: params["alert_type"] = alert_type
-            response = await client.post(f"{API_BASE_URL}/alerts/generate", params=params, timeout=60.0)
+            
+            url = f"{API_BASE_URL}/alerts/generate"
+            response = await client.post(url, params=params, timeout=60.0)
+            
             if response.status_code >= 400:
-                return {"error": f"HTTP {response.status_code}: {response.text}"}
+                return {"error": f"HTTP {response.status_code} at {url}: {response.text}"}
             return response.json()
         except Exception as e:
-            return {"error": str(e)}
+            return {"error": f"Connection Error to {API_BASE_URL}: {str(e)}"}
 
 async def check_backend_health():
     try:
