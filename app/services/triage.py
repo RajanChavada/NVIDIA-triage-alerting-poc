@@ -16,6 +16,9 @@ import json
 import os
 from pathlib import Path
 
+# In-memory queue for MVP (Kafka-ready design)
+triage_queue: asyncio.Queue[tuple[UUID, AlertPayload]] = asyncio.Queue()
+
 # In-memory storage with file persistence for demo
 CACHE_PATH = Path("data")
 CACHE_PATH.mkdir(exist_ok=True)

@@ -80,7 +80,7 @@ def generate_synthetic_alert(service_name: str | None = None, alert_type: str | 
         alert_type=a_type,
         detector=detector,
         timestamp=datetime.utcnow().isoformat() + "Z",
-        metrics=metric_snapshot,
+        metric_snapshot=metric_snapshot,
         context={
             "recent_log_ids": [f"log-{random.randint(1000, 9999)}" for _ in range(3)],
             "region": service.get("region", "us-central1"),

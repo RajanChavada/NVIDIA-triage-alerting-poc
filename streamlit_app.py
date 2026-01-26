@@ -157,12 +157,18 @@ with st.sidebar.expander("🚀 Demo Scenarios", expanded=True):
     if col1.button("🔐 Auth"):
         asyncio.run(trigger_synthetic_alert("auth-service", scenario if scenario != "Random" else None))
         st.toast("Auth Alert Triggered!")
+        time.sleep(1)
+        st.rerun()
     if col2.button("💳 Payment"):
         asyncio.run(trigger_synthetic_alert("payment-service", scenario if scenario != "Random" else None))
         st.toast("Payment Alert Triggered!")
+        time.sleep(1)
+        st.rerun()
     if st.button("👥 User Service", use_container_width=True):
         asyncio.run(trigger_synthetic_alert("user-service", scenario if scenario != "Random" else None))
         st.toast("User Alert Triggered!")
+        time.sleep(1)
+        st.rerun()
 
 if st.sidebar.button("🔄 Refresh Alerts", use_container_width=True):
     st.rerun()
