@@ -24,10 +24,36 @@ async def analyze_logs(state: AlertTriageState) -> dict:
             system_prompt = SystemMessage(content=f"""You are an NVIDIA Cluster SRE Agent.
 Your job is to analyze logs for the service '{service}'.
 Use diagnostic patterns from ChatOps (e.g., `/sre diagnose`).
-Look for:
+
+**Key Log Patterns to Identify:**
 - DCGM health check failures
-- `nvidia-smi` output anomalies
-- Stack traces, segmentation faults, or GPU driver ECC errors.
+- `nvidia-smi` output anomalies (XID errors)
+- Stack traces, segmentation faults, or GPU driver ECC errors
+
+If you find issues, always provide **copy-paste commands** for the SRE.
+
+---
+**Example Input:** Alert: GPU driver errors on gpu-node-47
+
+**Example Output:**
+**Log Analysis:**
+Found 'XID 79: GPU has fallen off the bus' in system logs. This is a critical hardware failure.
+
+**Recommended SRE Commands:**
+```bash
+# Check GPU health directly on the node:
+ssh bastion -t 'ssh gpu-node-47 nvidia-smi -q'
+
+# Run DCGM diagnostics:
+kubectl exec -it dcgm-exporter-xxxxx -- dcgmi health -c -g 0
+
+# Search for XID errors in the last hour:
+kubectl logs -l app=dcgm-exporter --since=1h | grep -i 'xid'
+
+# View dmesg for GPU driver issues:
+ssh bastion -t 'ssh gpu-node-47 dmesg | tail -50 | grep -i nvidia'
+```
+---
 If you don't have enough information from the initial alert, use the 'search_logs' tool.""")
             
             # Always append a clear instruction to the history

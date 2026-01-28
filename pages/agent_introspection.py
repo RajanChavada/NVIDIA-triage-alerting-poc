@@ -64,14 +64,16 @@ agents = [
         "role": "Metric Specialist / Anomaly Detector",
         "tools": ["get_service_metrics"],
         "context": """You are an NVIDIA Cluster Observability Agent.
-Your job is to analyze metrics for the service.
-NVIDIA uses a pull-based Prometheus system (15s scrape interval) collecting DCGM metrics.
-Key metrics to monitor:
-- dcgm_gpu_ecc_errors_total (Check for rate change > 0)
-- dcgm_gpu_temp (Check for spikes > 80C)
-- dcgm_memory_bandwidth (Check for utilization anomalies)
-Look for CPU spikes, memory leaks, GPU thermal throttling, or ECC error increases.""",
-        "examples": "Identifies that a 94% match to historical memory defects exists when ECC errors spike alongside temperature deltas."
+Monitors DCGM metrics via Prometheus (15s scrape).
+
+**Key Metrics:** dcgm_gpu_ecc_errors_total, dcgm_gpu_temp, dcgm_memory_bandwidth
+
+**Example Output Commands:**
+```bash
+curl -G 'http://prometheus:9090/api/v1/query' --data-urlencode 'query=rate(dcgm_gpu_ecc_errors_total[5m])'
+kubectl get events --field-selector involvedObject.name=gpu-node-47
+```""",
+        "examples": "Provides copy-paste Prometheus queries and kubectl commands for diagnosing ECC errors."
     },
     {
         "name": "SRE Diagnostic Agent",
@@ -80,13 +82,16 @@ Look for CPU spikes, memory leaks, GPU thermal throttling, or ECC error increase
         "role": "Log Investigator / Root Cause Analyst",
         "tools": ["search_logs"],
         "context": """You are an NVIDIA Cluster SRE Agent.
-Your job is to analyze logs for the service.
-Use diagnostic patterns from ChatOps (e.g., `/sre diagnose`).
-Look for:
-- DCGM health check failures
-- `nvidia-smi` output anomalies
-- Stack traces, segmentation faults, or GPU driver ECC errors.""",
-        "examples": "Detects 'XID 79: GPU has fallen off the bus' patterns in system logs during high workloads."
+Use ChatOps patterns (/sre diagnose).
+
+**Key Patterns:** DCGM health failures, XID errors, stack traces
+
+**Example Output Commands:**
+```bash
+ssh bastion -t 'ssh gpu-node-47 nvidia-smi -q'
+kubectl logs -l app=dcgm-exporter --since=1h | grep -i 'xid'
+```""",
+        "examples": "Provides nvidia-smi and dcgmi commands to diagnose XID 79 GPU failures."
     },
     {
         "name": "Incident RAG Agent",
@@ -94,10 +99,12 @@ Look for:
         "description": "Retrieves similar historical incidents from the incident database to suggest known resolutions.",
         "role": "Historical Knowledge Base",
         "tools": ["VectorDB Search (Mock)"],
-        "context": """Compare current evidence (ECC errors, temp spikes) to the current context.
-Look for pattern matches in historical incidents stored as feature vectors.
-Example Signatures:
-'ECC errors + temp spike + restart loop' = hardware_degradation (0.94 confidence).""",
+        "context": """Compare current symptoms to historical incident vectors.
+
+**Example Signatures:**
+'ECC errors + temp spike + restart loop' = hardware_degradation (0.94 match)
+
+Suggests resolutions from past incidents like INC-1847.""",
         "examples": "Notes that INC-1847 was resolved by decommissioning the node due to similar ECC signatures."
     },
     {
@@ -107,12 +114,15 @@ Example Signatures:
         "role": "Decision Maker / Workflow Orchestrator",
         "tools": ["kubectl", "Ansible/Terraform (via ChatOps)"],
         "context": """You are an NVIDIA Cluster Lead Engineer.
-Synthesize all logs, metrics, and past incidents.
-NVIDIA Remediation Workflows:
-- Node Draining: `kubectl drain` (cordon node, evict pods with graceful timeout).
-- ChatOps: `/sre remediate` triggers Ansible/Terraform lifecycle.
-- Lifecycle: Drains node, labels as 'decommissioned', Terraform provisions replacement from spares, then rebalance.""",
-        "examples": "Decides to decommission node-47 based on high confidence of hardware failure, triggering an automated replacement pipeline."
+NVIDIA Remediation Workflows: kubectl drain, /sre remediate
+
+**Example Remediation Commands:**
+```bash
+kubectl cordon gpu-node-47
+kubectl drain gpu-node-47 --ignore-daemonsets --grace-period=300
+# Slack: /sre remediate gpu-node-47 --action=decommission
+```""",
+        "examples": "Provides full kubectl drain and ChatOps command sequence for node decommissioning."
     }
 ]
 
@@ -149,25 +159,36 @@ for i, agent in enumerate(agents):
 
 st.divider()
 
-st.subheader("🚀 The Triage Flow (Enriched)")
+st.subheader("🚀 The Triage Flow (ReAct Agent Architecture)")
 import graphviz
 dot = graphviz.Digraph()
-dot.attr(rankdir='LR', bgcolor='transparent')
+dot.attr(rankdir='TB', bgcolor='transparent')
 dot.attr('node', shape='box', style='filled,rounded', fontname='Arial', fontsize='11', fillcolor='#1f6feb', fontcolor='white')
 dot.attr('edge', color='#58a6ff', penwidth='2')
 
-dot.node('A', 'Alert Triggered', fillcolor='#238636')
-dot.node('B', 'Observability Agent')
-dot.node('C', 'SRE Diagnostic Agent')
-dot.node('D', 'Incident RAG Agent')
-dot.node('E', 'Lead Engineer Agent')
-dot.node('F', 'Automated Remediation', fillcolor='#bf4b00')
+# Nodes matching graph.py
+dot.node('START', 'START', fillcolor='#238636')
+dot.node('gather', 'gather_context', fillcolor='#1f6feb')
+dot.node('logs', 'analyze_logs', fillcolor='#8957e5')
+dot.node('metrics', 'analyze_metrics', fillcolor='#8957e5')
+dot.node('tools', 'tools', fillcolor='#0969da')
+dot.node('rag', 'incident_rag', fillcolor='#0969da')
+dot.node('plan', 'plan_remediation', fillcolor='#bf4b00')
+dot.node('validate', 'validate_action', fillcolor='#a371f7')
+dot.node('finalize', 'finalize', fillcolor='#238636')
 
-dot.edge('A', 'B')
-dot.edge('B', 'C')
-dot.edge('C', 'D')
-dot.edge('D', 'E')
-dot.edge('E', 'F')
+# Edges matching graph.py (including ReAct loops)
+dot.edge('START', 'gather')
+dot.edge('gather', 'logs')
+dot.edge('logs', 'tools', label='tool call')
+dot.edge('tools', 'logs', label='search_logs')
+dot.edge('logs', 'metrics', label='next')
+dot.edge('metrics', 'tools', label='tool call')
+dot.edge('tools', 'metrics', label='get_metrics')
+dot.edge('metrics', 'rag', label='next')
+dot.edge('rag', 'plan')
+dot.edge('plan', 'validate')
+dot.edge('validate', 'finalize')
 
 st.graphviz_chart(dot)
 

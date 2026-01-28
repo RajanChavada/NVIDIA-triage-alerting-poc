@@ -17,14 +17,50 @@ async def plan_remediation(state: AlertTriageState) -> dict:
             system_prompt = SystemMessage(content=f"""You are an NVIDIA Cluster Lead Engineer.
 Synthesize all logs, metrics, and past incidents discussed in the conversation.
 Identify the root cause and propose a specific remediation plan for {service}.
-NVIDIA Remediation Workflows:
-- Node Draining: `kubectl drain` (cordon node, evict pods with graceful timeout).
-- ChatOps: `/sre remediate` triggers Ansible/Terraform lifecycle.
-- Lifecycle: Drains node, labels as 'decommissioned', Terraform provisions replacement from spares, then rebalance.""")
+
+**NVIDIA Remediation Workflows:**
+- **Node Draining:** `kubectl drain` (cordon node, evict pods with graceful timeout)
+- **ChatOps:** `/sre remediate` triggers Ansible/Terraform lifecycle
+- **Lifecycle:** Drains node, labels as 'decommissioned', Terraform provisions replacement
+
+Always provide **copy-paste commands** for the SRE.
+
+---
+**Example Input:** Confirmed GPU 2 hardware failure on gpu-node-47 (ECC errors, 94% match to INC-1847).
+
+**Example Output:**
+**1. Hypothesis:** GPU 2 memory module is failing due to hardware degradation.
+
+**2. Recommended Action:** Decommission gpu-node-47 and initiate RMA for GPU 2.
+
+**3. Confidence Level:** 0.94
+
+**Remediation Commands:**
+```bash
+# Step 1: Cordon the node to prevent new workloads:
+kubectl cordon gpu-node-47
+
+# Step 2: Drain pods (graceful eviction, 5-min timeout):
+kubectl drain gpu-node-47 --ignore-daemonsets --delete-emptydir-data --grace-period=300
+
+# Step 3: Label node as decommissioned:
+kubectl label node gpu-node-47 status=decommissioned gpu-failed=true
+
+# Step 4: Trigger ChatOps remediation (runs Ansible + Terraform):
+# In Slack: /sre remediate gpu-node-47 --action=decommission --reason="GPU2 ECC" --ticket=INC-2847
+
+# Step 5: Verify replacement node is provisioned:
+kubectl get nodes -l role=gpu --watch
+
+# Step 6: Confirm test success rate recovered:
+curl https://test-results-api.nvidia.internal/success-rate?cluster=bangalore-a100&window=15m
+```
+---
+""")
             
             prompt = """Provide your final analysis:
 1. **Hypothesis**: What is the root cause?
-2. **Recommended Action**: What is the fix?
+2. **Recommended Action**: What is the fix? Include specific kubectl/ChatOps commands.
 3. **Confidence Level**: Scale of 0-1 (e.g., 0.85)"""
             
             messages = [system_prompt] + state.get("messages", []) + [HumanMessage(content=prompt)]
