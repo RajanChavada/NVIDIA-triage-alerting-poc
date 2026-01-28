@@ -23,9 +23,7 @@ from app.agents.nodes.finalize import finalize
 
 # Tool support
 from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-import aiosqlite
-from pathlib import Path
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.errors import GraphInterrupt
 from app.agents.tools.prometheus import get_service_metrics
 from app.agents.tools.elasticsearch import search_logs
@@ -34,9 +32,8 @@ from app.agents.tools.elasticsearch import search_logs
 tools = [get_service_metrics, search_logs]
 tool_node = ToolNode(tools)
 
-# Persistent checkpoint storage
-CHECKPOINT_DB = Path("data") / "checkpoints.db"
-CHECKPOINT_DB.parent.mkdir(exist_ok=True)
+# In-memory checkpointer (triage results are persisted to JSON by triage.py)
+checkpointer = MemorySaver()
 
 def should_continue(state: AlertTriageState):
     """Determine if we should continue to tools or move to next node."""
@@ -111,25 +108,11 @@ triage_graph.add_edge("plan_remediation", "validate_action")
 triage_graph.add_edge("validate_action", "finalize")
 triage_graph.add_edge("finalize", END)
 
-# Store the uncompiled graph builder
-_triage_graph_builder = triage_graph
-
-# Compiled graph cache (populated at runtime with async checkpointer)
-_compiled_graph = None
-_checkpointer_conn = None
-
-async def get_compiled_graph():
-    """Get or create the compiled graph with persistent checkpointer."""
-    global _compiled_graph, _checkpointer_conn
-    if _compiled_graph is None:
-        _checkpointer_conn = await aiosqlite.connect(str(CHECKPOINT_DB))
-        checkpointer = AsyncSqliteSaver(_checkpointer_conn)
-        await checkpointer.setup()
-        _compiled_graph = _triage_graph_builder.compile(
-            checkpointer=checkpointer,
-            interrupt_before=["finalize"]
-        )
-    return _compiled_graph
+# Compile the graph with checkpointer and interrupt before finalize
+triage_graph = triage_graph.compile(
+    checkpointer=checkpointer,
+    interrupt_before=["finalize"]
+)
 
 
 async def run_triage_workflow(triage_id: UUID, alert: AlertPayload) -> TriageResult:
@@ -152,19 +135,16 @@ async def run_triage_workflow(triage_id: UUID, alert: AlertPayload) -> TriageRes
         "events": [],
     }
     
-    # Get the compiled graph (lazy init with persistent checkpointer)
-    graph = await get_compiled_graph()
-    
     # Run the graph with a thread_id for persistence
     config = {"configurable": {"thread_id": str(triage_id)}}
     
     # ainvoke will run until it hits the 'finalize' node (because interrupt_before=["finalize"])
-    final_state = await graph.ainvoke(initial_state, config=config)
+    final_state = await triage_graph.ainvoke(initial_state, config=config)
     
     # If no approval is required, auto-resume to run 'finalize' and set completed_at
     if not final_state.get("requires_approval", True):
         print(f"⏩ No approval required for {triage_id}, auto-finalizing...")
-        final_state = await graph.ainvoke(None, config=config)
+        final_state = await triage_graph.ainvoke(None, config=config)
     
     # Convert state to TriageResult
     return TriageResult(
@@ -188,11 +168,10 @@ async def approve_triage_workflow(triage_id: UUID) -> TriageResult:
     """
     Resume the workflow after human approval.
     """
-    graph = await get_compiled_graph()
     config = {"configurable": {"thread_id": str(triage_id)}}
     
     # Resume by passing None as input, it picks up where it left off
-    final_state = await graph.ainvoke(None, config=config)
+    final_state = await triage_graph.ainvoke(None, config=config)
     
     # The state should now have finished the 'finalize' node
     return TriageResult(
