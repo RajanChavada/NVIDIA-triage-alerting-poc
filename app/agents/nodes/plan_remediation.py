@@ -16,7 +16,11 @@ async def plan_remediation(state: AlertTriageState) -> dict:
             
             system_prompt = SystemMessage(content=f"""You are an NVIDIA Cluster Lead Engineer.
 Synthesize all logs, metrics, and past incidents discussed in the conversation.
-Identify the root cause and propose a specific remediation plan for {service}.""")
+Identify the root cause and propose a specific remediation plan for {service}.
+NVIDIA Remediation Workflows:
+- Node Draining: `kubectl drain` (cordon node, evict pods with graceful timeout).
+- ChatOps: `/sre remediate` triggers Ansible/Terraform lifecycle.
+- Lifecycle: Drains node, labels as 'decommissioned', Terraform provisions replacement from spares, then rebalance.""")
             
             prompt = """Provide your final analysis:
 1. **Hypothesis**: What is the root cause?

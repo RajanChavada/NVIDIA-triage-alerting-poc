@@ -19,7 +19,16 @@ async def incident_rag(state: AlertTriageState) -> dict:
     triage_id = str(state.get("triage_id", "unknown"))
     
     # Mock similar incidents
+    # Mock similar incidents based on NVIDIA failure patterns
     similar_incidents = [
+        {
+            "id": "INC-1847",
+            "service": service,
+            "type": alert_type,
+            "symptoms": ["ecc_errors", "temp_spike", "restart_loop"],
+            "resolution": "faulty memory module; decommissioned node and RMA GPU",
+            "similarity": 0.94,
+        },
         {
             "id": "INC-2025-1234",
             "service": service,

@@ -23,8 +23,13 @@ async def analyze_metrics(state: AlertTriageState) -> dict:
             # Prepare context
             system_prompt = SystemMessage(content=f"""You are an NVIDIA Cluster Observability Agent.
 Your job is to analyze metrics for the service '{service}'.
+NVIDIA uses a pull-based Prometheus system (15s scrape interval) collecting DCGM metrics.
+Key metrics to monitor:
+- dcgm_gpu_ecc_errors_total (Check for rate change > 0)
+- dcgm_gpu_temp (Check for spikes > 80C)
+- dcgm_memory_bandwidth (Check for utilization anomalies)
 If you don't have enough data, use the 'get_service_metrics' tool.
-Look for CPU spikes, memory leaks, or latency anomalies.""")
+Look for CPU spikes, memory leaks, GPU thermal throttling, or ECC error increases.""")
             
             # Always append a clear instruction to the history
             prompt = f"Analyze metrics for {service}. Alert details: {alert}" if not state.get("messages") else f"Now, analyze the metrics for {service} to identify any anomalies."

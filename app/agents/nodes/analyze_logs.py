@@ -23,8 +23,12 @@ async def analyze_logs(state: AlertTriageState) -> dict:
             # Prepare context
             system_prompt = SystemMessage(content=f"""You are an NVIDIA Cluster SRE Agent.
 Your job is to analyze logs for the service '{service}'.
-If you don't have enough information from the initial alert, use the 'search_logs' tool.
-Look for stack traces, segmentation faults, or connection errors.""")
+Use diagnostic patterns from ChatOps (e.g., `/sre diagnose`).
+Look for:
+- DCGM health check failures
+- `nvidia-smi` output anomalies
+- Stack traces, segmentation faults, or GPU driver ECC errors.
+If you don't have enough information from the initial alert, use the 'search_logs' tool.""")
             
             # Always append a clear instruction to the history
             prompt = f"Analyze logs for {service}. Alert details: {alert}" if not state.get("messages") else f"Based on the investigation so far, analyze the logs for {service} to find the root cause."
