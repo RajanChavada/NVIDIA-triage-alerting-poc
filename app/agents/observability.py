@@ -11,7 +11,7 @@ This can be synced to Langfuse or displayed directly in Streamlit.
 """
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 import json
 
 
@@ -22,14 +22,14 @@ class NodeMetrics:
     start_time: datetime
     end_time: datetime
     duration_ms: float
-    llm_model: str | None = None
+    llm_model: Optional[str] = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
     tool_calls: int = 0
     cost_usd: float = 0.0
     success: bool = True
-    error: str | None = None
+    error: Optional[str] = None
 
 
 @dataclass
@@ -39,8 +39,19 @@ class TriageMetrics:
     alert_id: str
     service: str
     start_time: datetime
-    end_time: datetime | None = None
+    end_time: Optional[datetime] = None
     node_metrics: List[NodeMetrics] = field(default_factory=list)
+    
+    # Experiment tracking
+    experiment_id: Optional[str] = None
+    variant: Optional[str] = None
+    alert_type: Optional[str] = None
+    severity: Optional[str] = None
+    
+    # Quality metrics (updated after SRE feedback)
+    was_approved: Optional[bool] = None  # SRE approved recommendation?
+    is_false_positive: Optional[bool] = None  # Retrospective analysis
+    mttr_minutes: Optional[float] = None  # Mean time to resolution
     
     @property
     def total_duration_ms(self) -> float:
@@ -130,6 +141,9 @@ def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> flo
     pricing = {
         "gemini-2.0-flash": {"input": 0.075 / 1_000_000, "output": 0.30 / 1_000_000},
         "anthropic/claude-3.5-sonnet": {"input": 3.00 / 1_000_000, "output": 15.00 / 1_000_000},
+        # NVIDIA Nemotron pricing (via API Catalog)
+        "nvidia/llama-3.1-nemotron-70b-instruct": {"input": 0.35 / 1_000_000, "output": 0.40 / 1_000_000},
+        "nvidia/mistral-nemo-12b-instruct": {"input": 0.10 / 1_000_000, "output": 0.10 / 1_000_000},
     }
     
     if model in pricing:

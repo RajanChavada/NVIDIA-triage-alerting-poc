@@ -1,0 +1,325 @@
+# NVIDIA Triage Agent - Kubernetes Deployment
+#
+# This manifest deploys the triage agent with:
+# - GPU resource limits for NIM inference
+# - HorizontalPodAutoscaler on Kafka consumer lag
+# - Readiness/liveness probes
+# - ConfigMap for environment configuration
+# - Secret references for API keys
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: triage-agents
+  labels:
+    app.kubernetes.io/name: triage-agents
+
+---
+# ConfigMap for non-sensitive configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: triage-agent-config
+  namespace: triage-agents
+data:
+  LLM_PROVIDER: "nvidia"
+  NVIDIA_MODEL: "nvidia/llama-3.1-nemotron-70b-instruct"
+  LANGFUSE_HOST: "https://us.cloud.langfuse.com"
+  LOG_LEVEL: "INFO"
+  # Kafka configuration
+  KAFKA_BROKERS: "kafka.kafka.svc.cluster.local:9092"
+  KAFKA_CONSUMER_GROUP: "triage-agents"
+  KAFKA_ALERT_TOPIC: "gpu-alerts"
+  KAFKA_OUTCOME_TOPIC: "triage-outcomes"
+  # Prometheus configuration
+  PROMETHEUS_URL: "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
+
+---
+# ExternalSecret for sensitive values (requires External Secrets Operator)
+# This pulls secrets from HashiCorp Vault or cloud secret managers
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: triage-agent-secrets
+  namespace: triage-agents
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: triage-agent-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: NVIDIA_API_KEY
+      remoteRef:
+        key: triage-agents/nvidia
+        property: api_key
+    - secretKey: LANGFUSE_PUBLIC_KEY
+      remoteRef:
+        key: triage-agents/langfuse
+        property: public_key
+    - secretKey: LANGFUSE_SECRET_KEY
+      remoteRef:
+        key: triage-agents/langfuse
+        property: secret_key
+    - secretKey: DATABASE_URL
+      remoteRef:
+        key: triage-agents/database
+        property: url
+
+---
+# ServiceAccount with Workload Identity
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: triage-agent
+  namespace: triage-agents
+  annotations:
+    iam.gke.io/gcp-service-account: triage-agent@PROJECT_ID.iam.gserviceaccount.com
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: triage-agent
+  namespace: triage-agents
+  labels:
+    app: triage-agent
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: triage-agent
+  template:
+    metadata:
+      labels:
+        app: triage-agent
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: triage-agent
+      
+      # Tolerate GPU nodes
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      
+      # Prefer GPU nodes
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: nvidia.com/gpu
+                    operator: Exists
+      
+      containers:
+        - name: agent
+          image: gcr.io/PROJECT_ID/triage-agent:latest
+          imagePullPolicy: Always
+          
+          ports:
+            - containerPort: 8000
+              name: http
+          
+          # Resource limits for GPU inference
+          resources:
+            limits:
+              nvidia.com/gpu: 1  # Request 1 GPU for NIM inference
+              memory: "8Gi"
+              cpu: "4"
+            requests:
+              memory: "4Gi"
+              cpu: "2"
+          
+          # Environment from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: triage-agent-config
+            - secretRef:
+                name: triage-agent-secrets
+          
+          # Health probes
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          
+          # Startup probe for slow container starts
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30  # Allow up to 5 minutes to start
+          
+          # Lifecycle hooks
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]  # Grace period for in-flight requests
+      
+      # Pod disruption budget compliance
+      terminationGracePeriodSeconds: 60
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: triage-agent
+  namespace: triage-agents
+  labels:
+    app: triage-agent
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: triage-agent
+
+---
+# HorizontalPodAutoscaler (scales on Kafka consumer lag)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: triage-agent-hpa
+  namespace: triage-agents
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: triage-agent
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # Scale on Kafka consumer lag
+    - type: External
+      external:
+        metric:
+          name: kafka_consumergroup_lag
+          selector:
+            matchLabels:
+              consumergroup: triage-agents
+              topic: gpu-alerts
+        target:
+          type: AverageValue
+          averageValue: "100"
+    # Also scale on CPU as fallback
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+
+---
+# PodDisruptionBudget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: triage-agent-pdb
+  namespace: triage-agents
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: triage-agent
+
+---
+# NetworkPolicy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: triage-agent-network
+  namespace: triage-agents
+spec:
+  podSelector:
+    matchLabels:
+      app: triage-agent
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - port: 8000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - port: 8000  # For Prometheus scraping
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+    # Allow Kafka
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kafka
+      ports:
+        - port: 9092
+    # Allow Prometheus
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - port: 9090
+    # Allow external (NVIDIA API, Langfuse, etc.)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443

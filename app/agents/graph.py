@@ -28,8 +28,33 @@ from langgraph.errors import GraphInterrupt
 from app.agents.tools.prometheus import get_service_metrics
 from app.agents.tools.elasticsearch import search_logs
 
-# Define the tools
-tools = [get_service_metrics, search_logs]
+# NVIDIA DCGM tools for GPU monitoring
+from app.agents.tools.dcgm import get_dcgm_metrics, get_dcgm_history, list_dcgm_gpus
+
+# Prometheus MCP tools for metric queries
+from app.mcp.prometheus import query_prometheus, list_metrics, get_alert_rules
+
+# Kafka MCP tools for event-driven workflows
+from app.mcp.kafka import publish_message, get_recent_messages, check_consumer_lag
+
+# Define the tools - includes GPU monitoring and event-driven capabilities
+tools = [
+    # Original tools
+    get_service_metrics,
+    search_logs,
+    # DCGM GPU monitoring
+    get_dcgm_metrics,
+    get_dcgm_history,
+    list_dcgm_gpus,
+    # Prometheus queries
+    query_prometheus,
+    list_metrics,
+    get_alert_rules,
+    # Kafka event streaming
+    publish_message,
+    get_recent_messages,
+    check_consumer_lag,
+]
 tool_node = ToolNode(tools)
 
 # In-memory checkpointer (triage results are persisted to JSON by triage.py)

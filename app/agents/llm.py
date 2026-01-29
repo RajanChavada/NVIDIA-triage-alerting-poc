@@ -4,15 +4,28 @@ Enhanced LLM wrapper with automatic metrics tracking and debug logging.
 import os
 import time
 from datetime import datetime
+from typing import Optional, TYPE_CHECKING
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
 from app.config import settings
 from app.agents.observability import add_node_metrics, NodeMetrics, estimate_cost
 
+if TYPE_CHECKING:
+    from app.agents.experiments.framework import ExperimentConfig
 
-def get_llm(trace_name: str = None) -> BaseChatModel:
-    """Get configured LLM with Langfuse tracing."""
+
+def get_llm(trace_name: str = None, experiment_config: Optional["ExperimentConfig"] = None) -> BaseChatModel:
+    """
+    Get configured LLM with Langfuse tracing.
+    
+    Args:
+        trace_name: Optional name for Langfuse trace
+        experiment_config: Optional experiment configuration for A/B testing
+        
+    Returns:
+        Configured LLM with callbacks
+    """
     
     if settings.llm_provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -44,6 +57,30 @@ def get_llm(trace_name: str = None) -> BaseChatModel:
             temperature=0.3,
         )
     
+    elif settings.llm_provider == "nvidia":
+        from langchain_nvidia_ai_endpoints import ChatNVIDIA
+        
+        if not settings.nvidia_api_key and not settings.nvidia_nim_endpoint:
+            raise ValueError("NVIDIA_API_KEY or NVIDIA_NIM_ENDPOINT is required when LLM_PROVIDER=nvidia")
+        
+        # Support both API Catalog and self-hosted NIM
+        if settings.nvidia_nim_endpoint:
+            # Self-hosted NIM container
+            llm = ChatNVIDIA(
+                base_url=settings.nvidia_nim_endpoint,
+                model=settings.nvidia_model,
+                temperature=0.3,
+            )
+            print(f"🟢 Using NVIDIA NIM at {settings.nvidia_nim_endpoint}")
+        else:
+            # NVIDIA API Catalog
+            llm = ChatNVIDIA(
+                model=settings.nvidia_model,
+                nvidia_api_key=settings.nvidia_api_key,
+                temperature=0.3,
+            )
+            print(f"🟢 Using NVIDIA API Catalog with model: {settings.nvidia_model}")
+    
     else:
         raise ValueError(f"Unknown LLM provider: {settings.llm_provider}")
     
@@ -55,7 +92,25 @@ def get_llm(trace_name: str = None) -> BaseChatModel:
             os.environ["LANGFUSE_HOST"] = settings.langfuse_host
             
             from langfuse.langchain import CallbackHandler
-            handler = CallbackHandler()
+            
+            # Build experiment-aware callback
+            callback_kwargs = {}
+            if experiment_config:
+                callback_kwargs["tags"] = [
+                    f"variant:{experiment_config.variant.value}",
+                    f"model:{experiment_config.model_name}",
+                    "shadow" if experiment_config.is_shadow_mode else "production",
+                ]
+                callback_kwargs["metadata"] = {
+                    "experiment_id": experiment_config.experiment_id,
+                    "variant": experiment_config.variant.value,
+                    "model_provider": experiment_config.model_provider,
+                    "use_rag": experiment_config.use_rag,
+                    "is_shadow_mode": experiment_config.is_shadow_mode,
+                    "confidence_threshold": experiment_config.confidence_threshold,
+                }
+            
+            handler = CallbackHandler(**callback_kwargs)
             llm = llm.with_config({"callbacks": [handler]})
         except Exception as e:
             print(f"⚠️ Langfuse disabled: {e}")

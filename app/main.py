@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api.routes import alerts, health, observability
+from app.api.routes import alerts, health, observability, experiments
 from app.services.triage import triage_worker
 
 
@@ -34,8 +34,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="NVIDIA Triage Alerting MVP",
-    description="AI-powered triage alerting system using multi-agent workflows",
-    version="0.1.0",
+    description="AI-powered triage alerting system using multi-agent workflows with NVIDIA GPU monitoring",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -52,6 +52,7 @@ app.add_middleware(
 app.include_router(health.router, tags=["Health"])
 app.include_router(alerts.router, prefix="/alerts", tags=["Alerts"])
 app.include_router(observability.router, tags=["Observability"])
+app.include_router(experiments.router, tags=["Experiments"])
 
 
 @app.get("/")

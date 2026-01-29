@@ -3,7 +3,7 @@ Application configuration with provider-agnostic LLM setup.
 
 The triage brain is provider-agnostic; swap Gemini/OpenRouter via config.
 """
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,13 +20,20 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # LLM Provider Configuration
     # -------------------------------------------------------------------------
-    llm_provider: Literal["gemini", "openrouter"] = "openrouter"
-    google_api_key: str | None = None
-    openrouter_api_key: str | None = None
+    llm_provider: Literal["gemini", "openrouter", "nvidia"] = "openrouter"
+    google_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
     
     # Model selection
     gemini_model: str = "gemini-2.0-flash"
     openrouter_model: str = "anthropic/claude-3.5-sonnet"
+    
+    # -------------------------------------------------------------------------
+    # NVIDIA Configuration
+    # -------------------------------------------------------------------------
+    nvidia_api_key: Optional[str] = None
+    nvidia_model: str = "nvidia/llama-3.1-nemotron-70b-instruct"  # Default Nemotron model
+    nvidia_nim_endpoint: Optional[str] = None  # For self-hosted NIM containers
     
     # -------------------------------------------------------------------------
     # Database Configuration
@@ -36,8 +43,8 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Langfuse Observability
     # -------------------------------------------------------------------------
-    langfuse_secret_key: str | None = None
-    langfuse_public_key: str | None = None
+    langfuse_secret_key: Optional[str] = None
+    langfuse_public_key: Optional[str] = None
     langfuse_host: str = "https://us.cloud.langfuse.com"
     
     # -------------------------------------------------------------------------
