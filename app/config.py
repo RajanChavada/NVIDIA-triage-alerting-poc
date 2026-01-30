@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # LLM Provider Configuration
     # -------------------------------------------------------------------------
-    llm_provider: Literal["gemini", "openrouter", "nvidia"] = "openrouter"
+    llm_provider: Literal["gemini", "openrouter", "nvidia"] = "nvidia"
     google_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
     

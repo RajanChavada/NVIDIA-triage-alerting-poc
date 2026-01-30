@@ -13,7 +13,7 @@ langchain-google-genai>=0.0.6
 langchain-openai>=0.0.5
 langchain-nvidia-ai-endpoints>=0.3.0
 langgraph>=0.0.26
-nemoguardrails>=0.8.0
+# nemoguardrails>=0.8.0  # Optional: requires C++ build tools, install separately if needed
 
 # Observability
 langfuse>=2.0.0
