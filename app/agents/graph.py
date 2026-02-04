@@ -88,7 +88,16 @@ triage_graph.add_node("finalize", finalize)
 
 # Define edges with tool loops
 triage_graph.set_entry_point("gather_context")
-triage_graph.add_edge("gather_context", "analyze_logs")
+
+# Gather Context loop (can call list_dcgm_gpus, get_recent_messages, etc.)
+triage_graph.add_conditional_edges(
+    "gather_context",
+    should_continue,
+    {
+        "tools": "tools",
+        "next": "analyze_logs",
+    },
+)
 
 # Analyze Logs loop
 triage_graph.add_conditional_edges(
@@ -110,22 +119,36 @@ triage_graph.add_conditional_edges(
     },
 )
 
-# Tool routing logic
+# Tool routing logic - routes tool output back to the calling node
 def route_tool_output(state: AlertTriageState):
+    """Route tool results back to the appropriate agent node."""
     messages = state.get("messages", [])
-    if not messages: return "analyze_metrics"
+    if not messages:
+        return "analyze_metrics"
+    
+    # Find the most recent AIMessage with tool calls to determine origin
     for msg in reversed(messages):
         if hasattr(msg, "tool_calls") and msg.tool_calls:
             tool_name = msg.tool_calls[0]["name"]
-            if tool_name == "search_logs":
+            
+            # gather_context tools
+            if tool_name in ["list_dcgm_gpus", "list_metrics", "get_alert_rules"]:
+                return "gather_context"
+            
+            # analyze_logs tools
+            if tool_name in ["search_logs", "get_recent_messages"]:
                 return "analyze_logs"
-            if tool_name == "get_service_metrics":
+            
+            # analyze_metrics tools (including DCGM and Prometheus)
+            if tool_name in ["get_service_metrics", "get_dcgm_metrics", "get_dcgm_history", "query_prometheus"]:
                 return "analyze_metrics"
-    return "analyze_metrics"
+    
+    return "analyze_metrics"  # default fallback
 
 triage_graph.add_conditional_edges("tools", route_tool_output, {
+    "gather_context": "gather_context",
     "analyze_logs": "analyze_logs",
-    "analyze_metrics": "analyze_metrics"
+    "analyze_metrics": "analyze_metrics",
 })
 
 triage_graph.add_edge("incident_rag", "plan_remediation")

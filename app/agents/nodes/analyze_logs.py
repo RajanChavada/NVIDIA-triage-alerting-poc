@@ -1,16 +1,29 @@
 """
 Log Analysis Node - Analyzes logs for error patterns with metrics tracking.
+
+Uses tools:
+- search_logs: Query Elasticsearch for log patterns
+- get_recent_messages: Check Kafka for correlated events
+- query_prometheus: Check if related alert rules fired
 """
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.state import AlertTriageState, create_event
 from app.agents.llm import get_llm, MetricsTracker
 from app.agents.tools.elasticsearch import search_logs
 
+# MCP Tools for log correlation
+from app.mcp.kafka import get_recent_messages
+from app.mcp.prometheus import query_prometheus, get_alert_rules
+
 
 async def analyze_logs(state: AlertTriageState) -> dict:
     """
     Agentic Log Analysis Node.
-    Uses search_logs tool to fetch data if needed, otherwise summarizes.
+    
+    Uses tools to:
+    - Search Elasticsearch for error patterns
+    - Check Kafka for correlated events from other services
+    - Query Prometheus for related alert activity
     """
     alert = state["alert"]
     service = alert.get("service", "unknown")
@@ -18,7 +31,9 @@ async def analyze_logs(state: AlertTriageState) -> dict:
     
     with MetricsTracker(triage_id, "analyze_logs") as tracker:
         try:
-            llm = get_llm().bind_tools([search_logs])
+            # Bind all log-analysis relevant tools
+            tools = [search_logs, get_recent_messages, query_prometheus, get_alert_rules]
+            llm = get_llm().bind_tools(tools)
             
             # Prepare context
             system_prompt = SystemMessage(content=f"""You are an NVIDIA Cluster SRE Agent.
