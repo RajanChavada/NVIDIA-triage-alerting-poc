@@ -106,15 +106,21 @@ def create_workflow_graph():
     graph.edges(edges)
     return graph
 
+@st.cache_data(ttl=10)  # Cache for 10 seconds to reduce API spam
+def get_triage_results_cached():
+    """Cached version to prevent redundant API calls on each Streamlit rerun."""
+    try:
+        response = httpx.get(f"{API_BASE_URL}/alerts/triage", timeout=5.0)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception as e:
+        st.error(f"Failed to fetch results: {e}")
+        return []
+
 async def get_triage_results():
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(f"{API_BASE_URL}/alerts/triage")
-            if response.status_code == 200:
-                return response.json()
-            return []
-        except Exception:
-            return []
+    """Async wrapper for compatibility - uses cached version."""
+    return get_triage_results_cached()
 
 async def approve_action(triage_id):
     async with httpx.AsyncClient() as client:
@@ -148,20 +154,21 @@ async def trigger_synthetic_alert(service_name=None, alert_type=None):
         except Exception as e:
             return {"error": f"Connection Error to {API_BASE_URL}: {str(e)}"}
 
-async def check_backend_health():
+@st.cache_data(ttl=5)  # Cache health check for 5 seconds
+def check_backend_health():
+    """Check if backend is healthy - cached to prevent spam."""
     try:
-        async with httpx.AsyncClient() as client:
-            # Try to hit the triage list endpoint as a health check
-            resp = await client.get(f"{API_BASE_URL}/alerts/triage", timeout=2.0)
-            return resp.status_code == 200
+        # Use /health endpoint instead of /alerts/triage to reduce load
+        resp = httpx.get(f"{API_BASE_URL}/health", timeout=2.0)
+        return resp.status_code == 200
     except:
         return False
 
 # Sidebar - Real-time Feed
 st.sidebar.title("🚨 Recent Alerts")
 
-# Health Check
-is_healthy = asyncio.run(check_backend_health())
+# Health Check (cached)
+is_healthy = check_backend_health()
 if is_healthy:
     st.sidebar.success(f"📟 Backend Connected: {API_BASE_URL}")
 else:
@@ -202,9 +209,11 @@ with st.sidebar.expander("🚀 Demo Scenarios", expanded=True):
             st.rerun()
 
 if st.sidebar.button("🔄 Refresh Alerts", use_container_width=True):
+    get_triage_results_cached.clear()  # Clear cache before refresh
     st.rerun()
 
-results = asyncio.run(get_triage_results())
+# Fetch results (cached for 10 seconds)
+results = get_triage_results_cached()
 
 if not results:
     st.sidebar.info("No active alerts being triaged.")
@@ -216,10 +225,9 @@ else:
     # Check if any are still processing to enable auto-refresh
     any_processing = any(res.get('status') == 'processing' for res in results)
     if any_processing:
-        st.sidebar.caption("🔄 Agent is active... auto-refreshing")
-        time.sleep(2) # Brief wait before next rerun if active
-        st.rerun()
+        st.sidebar.caption("🔄 Agent is active... auto-refreshing in 5s")
     
+    # Display all alerts FIRST (before any rerun)
     for res in results:
         t_id = res['triage_id']
         service = res['service']
@@ -243,6 +251,18 @@ else:
                     st.session_state.selected_triage_id = t_id
             with col2:
                 st.markdown(f"<span class='severity-{severity.lower()}'>•</span>", unsafe_allow_html=True)
+    
+    # Non-blocking auto-refresh for processing alerts
+    if any_processing:
+        # Use session state to track last auto-refresh time
+        if 'last_auto_refresh' not in st.session_state:
+            st.session_state.last_auto_refresh = time.time()
+        
+        # Only auto-refresh every 10 seconds
+        if time.time() - st.session_state.last_auto_refresh > 10:
+            st.session_state.last_auto_refresh = time.time()
+            get_triage_results_cached.clear()
+            st.rerun()
 
 # Main Dashboard Container
 if "selected_triage_id" in st.session_state:
