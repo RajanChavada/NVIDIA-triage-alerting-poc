@@ -1,0 +1,257 @@
+# NVIDIA Triage Agent - Ansible Playbook
+#
+# This playbook configures GPU nodes for the triage agent infrastructure:
+# - NVIDIA driver installation
+# - DCGM installation and configuration
+# - Node exporter setup
+# - Container runtime configuration
+
+---
+- name: Configure GPU Nodes for Triage Agents
+  hosts: gpu_nodes
+  become: yes
+  vars:
+    nvidia_driver_version: "535"
+    dcgm_version: "3.3.0"
+    dcgm_exporter_port: 9400
+    node_exporter_port: 9100
+    
+  tasks:
+    # -------------------------------------------------------------------------
+    # System Prerequisites
+    # -------------------------------------------------------------------------
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+    
+    - name: Install required packages
+      apt:
+        name:
+          - build-essential
+          - linux-headers-{{ ansible_kernel }}
+          - dkms
+          - curl
+          - wget
+          - apt-transport-https
+          - ca-certificates
+        state: present
+      when: ansible_os_family == "Debian"
+    
+    # -------------------------------------------------------------------------
+    # NVIDIA Driver Installation
+    # -------------------------------------------------------------------------
+    - name: Add NVIDIA package repository key
+      apt_key:
+        url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub
+        state: present
+      when: ansible_os_family == "Debian"
+    
+    - name: Add NVIDIA package repository
+      apt_repository:
+        repo: "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/ /"
+        state: present
+        filename: nvidia-cuda
+      when: ansible_os_family == "Debian"
+    
+    - name: Install NVIDIA driver
+      apt:
+        name: "nvidia-driver-{{ nvidia_driver_version }}"
+        state: present
+      register: nvidia_driver_install
+      when: ansible_os_family == "Debian"
+    
+    - name: Reboot if NVIDIA driver was installed
+      reboot:
+        reboot_timeout: 300
+      when: nvidia_driver_install.changed
+    
+    - name: Verify NVIDIA driver installation
+      command: nvidia-smi
+      register: nvidia_smi_output
+      changed_when: false
+    
+    - name: Display GPU information
+      debug:
+        msg: "{{ nvidia_smi_output.stdout_lines }}"
+    
+    # -------------------------------------------------------------------------
+    # DCGM Installation
+    # -------------------------------------------------------------------------
+    - name: Install DCGM
+      apt:
+        name: datacenter-gpu-manager
+        state: present
+      when: ansible_os_family == "Debian"
+    
+    - name: Enable and start DCGM service
+      systemd:
+        name: nvidia-dcgm
+        enabled: yes
+        state: started
+    
+    - name: Verify DCGM installation
+      command: dcgmi discovery -l
+      register: dcgm_discovery
+      changed_when: false
+    
+    - name: Display DCGM GPU discovery
+      debug:
+        msg: "{{ dcgm_discovery.stdout_lines }}"
+    
+    # -------------------------------------------------------------------------
+    # DCGM Exporter (for Prometheus)
+    # -------------------------------------------------------------------------
+    - name: Create DCGM Exporter systemd service
+      copy:
+        dest: /etc/systemd/system/dcgm-exporter.service
+        content: |
+          [Unit]
+          Description=DCGM Exporter for Prometheus
+          After=nvidia-dcgm.service
+          Requires=nvidia-dcgm.service
+          
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/dcgm-exporter --address=:{{ dcgm_exporter_port }}
+          Restart=always
+          RestartSec=10
+          
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify: Reload systemd
+    
+    - name: Enable and start DCGM Exporter
+      systemd:
+        name: dcgm-exporter
+        enabled: yes
+        state: started
+        daemon_reload: yes
+    
+    # -------------------------------------------------------------------------
+    # Node Exporter (system metrics)
+    # -------------------------------------------------------------------------
+    - name: Download Node Exporter
+      get_url:
+        url: https://github.com/prometheus/node_exporter/releases/download/v1.7.0/node_exporter-1.7.0.linux-amd64.tar.gz
+        dest: /tmp/node_exporter.tar.gz
+    
+    - name: Extract Node Exporter
+      unarchive:
+        src: /tmp/node_exporter.tar.gz
+        dest: /usr/local/bin
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+        creates: /usr/local/bin/node_exporter
+    
+    - name: Create Node Exporter systemd service
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        content: |
+          [Unit]
+          Description=Prometheus Node Exporter
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=nobody
+          ExecStart=/usr/local/bin/node_exporter --web.listen-address=:{{ node_exporter_port }}
+          Restart=always
+          RestartSec=10
+          
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify: Reload systemd
+    
+    - name: Enable and start Node Exporter
+      systemd:
+        name: node_exporter
+        enabled: yes
+        state: started
+        daemon_reload: yes
+    
+    # -------------------------------------------------------------------------
+    # Container Runtime (containerd + NVIDIA Container Toolkit)
+    # -------------------------------------------------------------------------
+    - name: Add NVIDIA Container Toolkit repository
+      apt_key:
+        url: https://nvidia.github.io/libnvidia-container/gpgkey
+        state: present
+      when: ansible_os_family == "Debian"
+    
+    - name: Add NVIDIA Container Toolkit repo
+      apt_repository:
+        repo: "deb https://nvidia.github.io/libnvidia-container/stable/deb/$(ARCH) /"
+        state: present
+        filename: nvidia-container-toolkit
+      when: ansible_os_family == "Debian"
+    
+    - name: Install NVIDIA Container Toolkit
+      apt:
+        name: nvidia-container-toolkit
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+    
+    - name: Configure containerd for NVIDIA
+      command: nvidia-ctk runtime configure --runtime=containerd
+      notify: Restart containerd
+    
+    # -------------------------------------------------------------------------
+    # Firewall Rules
+    # -------------------------------------------------------------------------
+    - name: Allow Prometheus scraping ports
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "{{ dcgm_exporter_port }}"
+        - "{{ node_exporter_port }}"
+      when: ansible_os_family == "Debian"
+    
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+    
+    - name: Restart containerd
+      systemd:
+        name: containerd
+        state: restarted
+
+# -------------------------------------------------------------------------
+# Health Checks
+# -------------------------------------------------------------------------
+- name: GPU Node Health Checks
+  hosts: gpu_nodes
+  become: no
+  tasks:
+    - name: Check NVIDIA driver
+      command: nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu --format=csv
+      register: gpu_status
+      changed_when: false
+    
+    - name: Check DCGM Exporter endpoint
+      uri:
+        url: "http://localhost:9400/metrics"
+        return_content: yes
+      register: dcgm_metrics
+      failed_when: "'DCGM_FI_DEV_GPU_TEMP' not in dcgm_metrics.content"
+    
+    - name: Check Node Exporter endpoint
+      uri:
+        url: "http://localhost:9100/metrics"
+        return_content: yes
+      register: node_metrics
+      failed_when: "'node_cpu_seconds_total' not in node_metrics.content"
+    
+    - name: Display GPU status
+      debug:
+        msg: |
+          GPU Status: {{ gpu_status.stdout }}
+          DCGM Exporter: ✓ Running
+          Node Exporter: ✓ Running

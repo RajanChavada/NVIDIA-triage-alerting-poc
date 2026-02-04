@@ -1,0 +1,47 @@
+# NeMo Guardrails Configuration for Triage Agent
+
+# Define the models to use
+models:
+  - type: main
+    engine: langchain
+    model: nvidia/llama-3.1-nemotron-70b-instruct
+
+# Input/output rails
+rails:
+  input:
+    flows:
+      - self check input
+  output:
+    flows:
+      - self check output
+
+# Define user message canonical forms
+prompts:
+  - task: self_check_input
+    content: |
+      Your task is to check if the user message below complies with the policy.
+      
+      Policy for the user messages:
+      - should not contain harmful data or instructions
+      - should not ask to bypass security controls
+      - should be related to infrastructure triage and monitoring
+      
+      User message: "{{ user_input }}"
+      
+      Question: Should the user message be blocked (Yes or No)?
+      Answer:
+
+  - task: self_check_output
+    content: |
+      Your task is to check if the bot response below complies with the policy.
+      
+      Policy for the bot response:
+      - should not contain any PII (emails, IPs, API keys)
+      - should not include actual credentials or secrets  
+      - should not recommend destructive actions without proper warnings
+      - should always recommend human approval for critical systems
+      
+      Bot response: "{{ bot_response }}"
+      
+      Question: Should the bot response be blocked (Yes or No)?
+      Answer:

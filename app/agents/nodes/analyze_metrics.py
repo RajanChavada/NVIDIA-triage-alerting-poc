@@ -1,16 +1,32 @@
 """
 Metrics Analysis Node - Analyzes alert metrics with observability.
+
+Uses tools:
+- get_service_metrics: Query service-level metrics from Prometheus
+- get_dcgm_metrics: Get current GPU health metrics
+- get_dcgm_history: Get GPU metric trends for anomaly detection
+- query_prometheus: Execute custom PromQL queries
 """
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.state import AlertTriageState, create_event
 from app.agents.llm import get_llm, MetricsTracker
 from app.agents.tools.prometheus import get_service_metrics
 
+# NVIDIA DCGM tools for GPU monitoring
+from app.agents.tools.dcgm import get_dcgm_metrics, get_dcgm_history
+
+# Prometheus MCP tools for custom queries
+from app.mcp.prometheus import query_prometheus
+
 
 async def analyze_metrics(state: AlertTriageState) -> dict:
     """
     Agentic Metrics Node.
-    Uses get_service_metrics tool to fetch data if needed, otherwise summarizes.
+    
+    Uses tools to:
+    - Query service metrics via get_service_metrics
+    - Get GPU health via DCGM tools (for GPU-related alerts)
+    - Execute custom PromQL queries for deep analysis
     """
     alert = state["alert"]
     service = alert.get("service", "unknown")
@@ -18,7 +34,9 @@ async def analyze_metrics(state: AlertTriageState) -> dict:
     
     with MetricsTracker(triage_id, "analyze_metrics") as tracker:
         try:
-            llm = get_llm().bind_tools([get_service_metrics])
+            # Bind all metrics-analysis relevant tools
+            tools = [get_service_metrics, get_dcgm_metrics, get_dcgm_history, query_prometheus]
+            llm = get_llm().bind_tools(tools)
             
             # Prepare context
             system_prompt = SystemMessage(content=f"""You are an NVIDIA Cluster Observability Agent.
